@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { FileFinding, ScanReport } from "../scanner";
 import { TOOL_NAME, TOOL_VERSION } from "../version.js";
 
@@ -13,6 +14,10 @@ import { TOOL_NAME, TOOL_VERSION } from "../version.js";
 export interface SarifOptions {
   /** id -> description, taken from the rule registry at scan time. */
   ruleDescriptions: Map<string, string>;
+  /** Optional per-rule documentation URI (defaults to repo README anchor). */
+  ruleHelpUris?: Map<string, string>;
+  /** Optional per-rule tags for GitHub Code Scanning categorization. */
+  ruleTags?: Map<string, string[]>;
 }
 
 const SEVERITY_TO_SARIF_LEVEL: Record<string, string> = {
@@ -22,6 +27,26 @@ const SEVERITY_TO_SARIF_LEVEL: Record<string, string> = {
   low: "note",
 };
 
+/**
+ * Computes a deterministic SHA-256 fingerprint from file, rule ID, and message
+ * so GitHub Code Scanning can track alert identity across code changes.
+ */
+export function computePrimaryLocationLineHash(
+  file: string,
+  ruleId: string,
+  message: string,
+): string {
+  const normalizedFile = file.replace(/\\/g, "/");
+  return crypto
+    .createHash("sha256")
+    .update(`${normalizedFile}:${ruleId}:${message}`)
+    .digest("hex");
+}
+
+function defaultHelpUri(ruleId: string): string {
+  return `https://github.com/Emmanuel-Ugochukwu1/auditpulse-core#${ruleId.toLowerCase()}`;
+}
+
 export function toSarifLog(
   report: ScanReport,
   options: SarifOptions,
@@ -29,7 +54,13 @@ export function toSarifLog(
   // One rule entry per finding id, in first-seen order.
   const rulesById = new Map<
     string,
-    { id: string; shortDescription: { text: string }; defaultConfiguration: { level: string } }
+    {
+      id: string;
+      shortDescription: { text: string };
+      helpUri: string;
+      defaultConfiguration: { level: string };
+      properties: { tags: string[] };
+    }
   >();
   for (const finding of report.findings) {
     if (rulesById.has(finding.id)) continue;
@@ -38,34 +69,58 @@ export function toSarifLog(
       shortDescription: {
         text: options.ruleDescriptions.get(finding.id) ?? finding.id,
       },
+      helpUri: options.ruleHelpUris?.get(finding.id) ?? defaultHelpUri(finding.id),
       defaultConfiguration: {
         level: SEVERITY_TO_SARIF_LEVEL[finding.severity] ?? "warning",
+      },
+      properties: {
+        tags: options.ruleTags?.get(finding.id) ?? [
+          "security",
+          "smart-contract",
+          "soroban",
+        ],
       },
     });
   }
   const rules = [...rulesById.values()];
 
-  const results = report.findings.map((finding) => ({
-    ruleId: finding.id,
-    level: SEVERITY_TO_SARIF_LEVEL[finding.severity] ?? "warning",
-    message: { text: finding.message },
-    locations: [
-      {
-        physicalLocation: {
-          artifactLocation: { uri: finding.file.replace(/\\/g, "/") },
-          region: {
-            startLine: finding.location.line,
-            ...(finding.location.column !== undefined
-              ? { startColumn: finding.location.column }
-              : {}),
+  const results = report.findings.map((finding) => {
+    const normalizedFile = finding.file.replace(/\\/g, "/");
+    const properties: Record<string, unknown> = {};
+    if (finding.remediation !== undefined) {
+      properties.remediation = finding.remediation;
+    }
+    if (finding.confidence !== undefined) {
+      properties.precision = finding.confidence;
+    }
+
+    return {
+      ruleId: finding.id,
+      level: SEVERITY_TO_SARIF_LEVEL[finding.severity] ?? "warning",
+      message: { text: finding.message },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: normalizedFile },
+            region: {
+              startLine: finding.location.line,
+              ...(finding.location.column !== undefined
+                ? { startColumn: finding.location.column }
+                : {}),
+            },
           },
         },
+      ],
+      partialFingerprints: {
+        primaryLocationLineHash: computePrimaryLocationLineHash(
+          finding.file,
+          finding.id,
+          finding.message,
+        ),
       },
-    ],
-    ...(finding.remediation !== undefined
-      ? { properties: { remediation: finding.remediation } }
-      : {}),
-  }));
+      ...(Object.keys(properties).length > 0 ? { properties } : {}),
+    };
+  });
 
   return {
     $schema:
@@ -80,6 +135,9 @@ export function toSarifLog(
             informationUri: "https://github.com/Emmanuel-Ugochukwu1/auditpulse-core",
             rules,
           },
+        },
+        automationDetails: {
+          id: `${TOOL_NAME}@${TOOL_VERSION}/scan`,
         },
         results,
       },
