@@ -72,6 +72,38 @@ describe("parseConfig", () => {
   it("rejects unknown min_severity values", () => {
     expect(() => parseConfig('min_severity = "extreme"')).toThrow(ConfigError);
   });
+
+  it("parses [severity_overrides] section and inline tables", () => {
+    const parsedSection = parseConfig(
+      [
+        'min_severity = "low"',
+        "",
+        "[severity_overrides]",
+        'AP-STORAGE-001 = "medium"',
+        'AP-ARITH-001 = "low"',
+      ].join("\n"),
+    );
+
+    expect(parsedSection.severityOverrides).toEqual({
+      "AP-STORAGE-001": "medium",
+      "AP-ARITH-001": "low",
+    });
+
+    const parsedInline = parseConfig(
+      'severity_overrides = { "AP-STORAGE-001" = "high" }',
+    );
+    expect(parsedInline.severityOverrides).toEqual({
+      "AP-STORAGE-001": "high",
+    });
+  });
+
+  it("rejects invalid severity_overrides values", () => {
+    expect(() =>
+      parseConfig(
+        ["[severity_overrides]", 'AP-STORAGE-001 = "super_high"'].join("\n"),
+      ),
+    ).toThrow(ConfigError);
+  });
 });
 
 describe("resolveConfig", () => {
@@ -82,22 +114,37 @@ describe("resolveConfig", () => {
       disabledRules: [],
       minSeverity: "low",
       exclude: [],
+      severityOverrides: {},
     });
     expect(config).toEqual(defaultConfig());
   });
 
   it("merges parsed values over defaults", () => {
-    const config = resolveConfig({ exclude: ["gen"] }, RULE_IDS);
+    const config = resolveConfig(
+      {
+        exclude: ["gen"],
+        severityOverrides: { "AP-STORAGE-001": "medium" },
+      },
+      RULE_IDS,
+    );
 
     expect(config.disabledRules).toEqual([]);
     expect(config.minSeverity).toBe("low");
     expect(config.exclude).toEqual(["gen"]);
+    expect(config.severityOverrides).toEqual({ "AP-STORAGE-001": "medium" });
   });
 
-  it("rejects unknown rule ids", () => {
-    expect(() => resolveConfig({ disabledRules: ["AP-NOPE-001"] }, RULE_IDS)).toThrow(
-      /Unknown rule id/,
-    );
+  it("rejects unknown rule ids in disabledRules and severityOverrides", () => {
+    expect(() =>
+      resolveConfig({ disabledRules: ["AP-NOPE-001"] }, RULE_IDS),
+    ).toThrow(/Unknown rule id/);
+
+    expect(() =>
+      resolveConfig(
+        { severityOverrides: { "AP-FAKE-001": "medium" } },
+        RULE_IDS,
+      ),
+    ).toThrow(/Unknown rule id in severity_overrides/);
   });
 });
 
