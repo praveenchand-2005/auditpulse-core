@@ -115,6 +115,36 @@ function toDisplayPath(target: string): string {
   return abs.split(path.sep).join("/");
 }
 
+/**
+ * Scans code for inline suppressions:
+ *   // auditpulse-ignore <RULE-ID>
+ *   /* auditpulse-ignore <RULE-ID> * /
+ * Suppresses findings on the comment line itself as well as the line immediately below.
+ */
+export function parseInlineSuppressions(code: string): Map<number, Set<string>> {
+  const suppressions = new Map<number, Set<string>>();
+  const lines = code.split(/\r?\n/);
+  const regex = /auditpulse-ignore\s+([A-Za-z0-9-_]+)/g;
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineNo = i + 1;
+    const line = lines[i] ?? "";
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line)) !== null) {
+      const ruleId = match[1]!;
+      // Suppress on the comment's line
+      if (!suppressions.has(lineNo)) suppressions.set(lineNo, new Set());
+      suppressions.get(lineNo)!.add(ruleId);
+
+      // Suppress on the line immediately below
+      if (!suppressions.has(lineNo + 1)) suppressions.set(lineNo + 1, new Set());
+      suppressions.get(lineNo + 1)!.add(ruleId);
+    }
+  }
+
+  return suppressions;
+}
+
 /** Scans one file and attaches its display path to every finding. */
 function scanFile(
   root: string,
@@ -125,12 +155,26 @@ function scanFile(
 ): FileFinding[] {
   const code = fs.readFileSync(path.join(root, relPath), "utf-8");
   const findings: FileFinding[] = [];
+  const suppressions = parseInlineSuppressions(code);
 
   // One pass over the file: the engine parses it once (or falls back to
   // source-text extraction) and hands every rule the same structure, so no
-  // rule re-parses or re-extracts on its own. Disabled rules never run; the
-  // severity threshold filters the aggregated findings.
-  for (const finding of engine.run(code, { disabledRules: config.disabledRules })) {
+  // rule re-parses or re-extracts on its own. Disabled rules never run;
+  // inline suppressions filter before overrides; severity overrides apply
+  // before the severity threshold filters aggregated findings.
+  for (const rawFinding of engine.run(code, { disabledRules: config.disabledRules })) {
+    const lineSuppressions = suppressions.get(rawFinding.location.line);
+    if (lineSuppressions && lineSuppressions.has(rawFinding.id)) {
+      continue;
+    }
+
+    const effectiveSeverity =
+      config.severityOverrides?.[rawFinding.id] ?? rawFinding.severity;
+    const finding: Vulnerability = {
+      ...rawFinding,
+      severity: effectiveSeverity,
+    };
+
     if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[config.minSeverity]) {
       continue;
     }
