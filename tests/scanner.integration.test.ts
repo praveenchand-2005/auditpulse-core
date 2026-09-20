@@ -205,6 +205,82 @@ describe("location regression through scanTarget", () => {
   });
 });
 
+describe("severity overrides in scanTarget", () => {
+  it("downgrades finding severity and applies minSeverity threshold", () => {
+    write("vault.rs", VULNERABLE);
+    const config = {
+      ...defaultConfig(),
+      minSeverity: "high" as const,
+      severityOverrides: { "AP-AUTH-001": "low" as const },
+    };
+
+    const report = scanTarget(path.join(tmp, "vault.rs"), engine(), config);
+    // AP-AUTH-001 downgraded to low, minSeverity is high -> suppressed from report
+    const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth).toBeUndefined();
+  });
+
+  it("preserves overridden severity in returned findings", () => {
+    write("vault.rs", VULNERABLE);
+    const config = {
+      ...defaultConfig(),
+      minSeverity: "low" as const,
+      severityOverrides: { "AP-AUTH-001": "medium" as const },
+    };
+
+    const report = scanTarget(path.join(tmp, "vault.rs"), engine(), config);
+    const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth).toBeDefined();
+    expect(auth?.severity).toBe("medium");
+  });
+});
+
+describe("inline suppressions in scanTarget", () => {
+  it("suppresses finding when auditpulse-ignore comment is on line above", () => {
+    const codeWithSuppression = `
+      // auditpulse-ignore AP-AUTH-001
+      fn withdraw(env: Env, to: Address, amount: i128) {
+        let client = token::Client::new(&env, &token_id);
+        client.transfer(&to, &amount);
+      }
+    `;
+    write("vault.rs", codeWithSuppression);
+
+    const report = scanTarget(path.join(tmp, "vault.rs"), engine(), defaultConfig());
+    const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth).toBeUndefined();
+  });
+
+  it("suppresses finding when auditpulse-ignore comment is on same line", () => {
+    const codeWithSuppression = `
+      fn withdraw(env: Env, to: Address, amount: i128) { // auditpulse-ignore AP-AUTH-001
+        let client = token::Client::new(&env, &token_id);
+        client.transfer(&to, &amount);
+      }
+    `;
+    write("vault.rs", codeWithSuppression);
+
+    const report = scanTarget(path.join(tmp, "vault.rs"), engine(), defaultConfig());
+    const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth).toBeUndefined();
+  });
+
+  it("only suppresses the exact matching rule id", () => {
+    const code = `
+      // auditpulse-ignore AP-DEBUG-001
+      fn withdraw(env: Env, to: Address, amount: i128) {
+        let client = token::Client::new(&env, &token_id);
+        client.transfer(&to, &amount);
+      }
+    `;
+    write("vault.rs", code);
+
+    const report = scanTarget(path.join(tmp, "vault.rs"), engine(), defaultConfig());
+    const auth = report.findings.find((f) => f.id === "AP-AUTH-001");
+    expect(auth).toBeDefined();
+  });
+});
+
 describe("sortFindings", () => {
   it("orders by file, then line, then rule id", () => {
     const base = { message: "m", severity: "high" as const };
