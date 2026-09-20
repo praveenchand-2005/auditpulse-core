@@ -184,10 +184,11 @@ omitted when the rule does not provide them.
 node dist/index.js sarif contracts/SampleVault.rs > auditpulse.sarif
 ```
 
-Emits SARIF 2.1.0 with the tool driver, rule metadata (ids, descriptions,
-levels) and one result per finding with file URI and start line (plus start
-column when the rule verified it), ready for
-upload to GitHub Code Scanning.
+Emits SARIF 2.1.0 with the tool driver, enriched rule metadata (ids,
+descriptions, help URIs, tags, severity levels), run automation details, and
+one result per finding with file URI, precise start line and column, confidence-derived
+precision, and deterministic SHA-256 `partialFingerprints` for stable GitHub
+Code Scanning alert tracking across line shifts. Ready for upload to GitHub Code Scanning.
 
 ## Configuration
 
@@ -198,10 +199,27 @@ any parent, or can be given explicitly with `--config`:
 disabled_rules = ["AP-DEBUG-001"]
 min_severity = "low"          # low | medium | high | critical
 exclude = ["vendor", "generated"]
+
+[severity_overrides]
+AP-STORAGE-001 = "medium"     # tune individual rule severities
+AP-ARITH-001 = "low"
 ```
 
 Without a config file, defaults apply: all rules enabled, `min_severity =
 "low"`, no extra exclusions. Invalid values are rejected with exit code 2.
+
+### Inline Suppressions
+
+To suppress a specific finding without disabling the rule globally, add an `auditpulse-ignore <RULE-ID>` comment either directly on the finding's line or on the line immediately above it:
+
+```rust
+// auditpulse-ignore AP-AUTH-001
+pub fn admin_action(env: Env) {
+    // ...
+}
+
+let result = a + b; // auditpulse-ignore AP-ARITH-001
+```
 
 ## Exit codes
 
@@ -309,6 +327,8 @@ acceptance criteria. These are maintainer-planned items derived from the
 codebase itself — new rule candidates, fixture coverage, configuration, and
 reporting enhancements.
 
+* [Contributing Guide](CONTRIBUTING.md) — development workflow, setup, and PR conventions
+* [Writing a Rule Guide](docs/writing-a-rule.md) — end-to-end walkthrough for implementing new rule plugins
 * Issue tracker: <https://github.com/Emmanuel-Ugochukwu1/auditpulse-core/issues>
 * Roadmap overview: `docs/ROADMAP_ISSUES.md`
 * Issues labeled `good first issue` are scoped for a first contribution
@@ -322,10 +342,16 @@ run; it skips titles that already exist, so it never creates duplicates).
 Built with TypeScript: Tree-sitter provides function structure, source-text pattern rules perform the checks, and Vitest tests it all.
 
 ```bash
-# Type check
-npx tsc --noEmit
-
-# Run unit tests
 npm test
 
+# Run complete test suite
+npm test
+
+# Type check strictly
+npm run typecheck
+
+# Build distribution bundle
+npm run build
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full architectural guidelines and testing conventions.
