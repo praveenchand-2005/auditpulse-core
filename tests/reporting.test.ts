@@ -199,6 +199,84 @@ describe("SARIF output", () => {
     ]);
     expect(renderSarif(report(findings), { ruleDescriptions })).toBe(text);
   });
+
+  it("includes enriched rule metadata (helpUri, tags) and run automationDetails", () => {
+    const log = JSON.parse(
+      renderSarif(
+        report([finding({ file: "src/a.rs", location: { line: 12 } })]),
+        { ruleDescriptions },
+      ),
+    ) as any;
+
+    expect(log.runs[0].automationDetails).toEqual({
+      id: "auditpulse@2.0.0/scan",
+    });
+
+    const rule = log.runs[0].tool.driver.rules[0];
+    expect(rule.helpUri).toBe("https://github.com/Emmanuel-Ugochukwu1/auditpulse-core#ap-auth-001");
+    expect(rule.properties.tags).toEqual(["security", "smart-contract", "soroban"]);
+  });
+
+  it("includes result precision from finding confidence and remediation", () => {
+    const log = JSON.parse(
+      renderSarif(
+        report([
+          finding({
+            file: "src/a.rs",
+            confidence: "high",
+            remediation: "Add require_auth",
+          }),
+        ]),
+        { ruleDescriptions },
+      ),
+    ) as any;
+
+    const result = log.runs[0].results[0];
+    expect(result.properties).toEqual({
+      remediation: "Add require_auth",
+      precision: "high",
+    });
+  });
+
+  it("emits deterministic partialFingerprints for results", () => {
+    const findings = [
+      finding({ file: "src/a.rs", location: { line: 10 } }),
+      finding({ file: "src/a.rs", location: { line: 10 } }),
+    ];
+    const log1 = JSON.parse(renderSarif(report(findings), { ruleDescriptions })) as any;
+    const log2 = JSON.parse(renderSarif(report(findings), { ruleDescriptions })) as any;
+
+    const fp1 = log1.runs[0].results[0].partialFingerprints.primaryLocationLineHash;
+    const fp2 = log2.runs[0].results[0].partialFingerprints.primaryLocationLineHash;
+
+    expect(typeof fp1).toBe("string");
+    expect(fp1).toHaveLength(64); // SHA-256 hex string
+    expect(fp1).toBe(fp2);
+  });
+
+  it("allows custom ruleHelpUris and ruleTags in SarifOptions", () => {
+    const customHelpUris = new Map([
+      ["AP-AUTH-001", "https://docs.auditpulse.dev/rules/auth"],
+    ]);
+    const customTags = new Map([
+      ["AP-AUTH-001", ["custom-tag", "auth"]],
+    ]);
+
+    const log = JSON.parse(
+      renderSarif(
+        report([finding({ file: "src/a.rs" })]),
+        {
+          ruleDescriptions,
+          ruleHelpUris: customHelpUris,
+          ruleTags: customTags,
+        },
+      ),
+    ) as any;
+
+    const rule = log.runs[0].tool.driver.rules[0];
+    expect(rule.helpUri).toBe("https://docs.auditpulse.dev/rules/auth");
+    expect(rule.properties.tags).toEqual(["custom-tag", "auth"]);
+  });
 });
 
 describe("human output", () => {
