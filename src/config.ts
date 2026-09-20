@@ -4,13 +4,17 @@ import type { Severity } from "./types";
  * Lightweight AuditPulse configuration.
  *
  * Loads `auditpulse.toml` when present (no dependencies: only the flat
- * `key = "value"` subset described below is understood) and falls back to
- * sensible defaults when no file exists.
+ * `key = "value"` subset and `[severity_overrides]` section described below is understood)
+ * and falls back to sensible defaults when no file exists.
  *
  * Supported keys:
  *   disabled_rules = ["AP-DEBUG-001", ...]
  *   min_severity   = "low" | "medium" | "high" | "critical"
  *   exclude        = ["node_modules", ...]  (path fragments, forward slashes)
+ *
+ * Supported sections:
+ *   [severity_overrides]
+ *   AP-STORAGE-001 = "medium"
  *
  * Unknown keys are ignored. Invalid values are reported as errors rather
  * than guessed at.
@@ -22,6 +26,8 @@ export interface AuditPulseConfig {
   minSeverity: Severity;
   /** Path fragments (forward-slash separated) to skip during discovery. */
   exclude: string[];
+  /** Per-rule severity overrides mapping rule id -> custom severity. */
+  severityOverrides: Record<string, Severity>;
 }
 
 /** Severity ranking used for both filtering and sorting. */
@@ -40,6 +46,7 @@ export function defaultConfig(): AuditPulseConfig {
     disabledRules: [],
     minSeverity: "low",
     exclude: [],
+    severityOverrides: {},
   };
 }
 
@@ -75,10 +82,21 @@ export function findConfigFile(
 export function parseConfig(text: string): Partial<AuditPulseConfig> {
   const result: Partial<AuditPulseConfig> = {};
   const lines = text.split(/\r?\n/);
+  let currentSection = "";
 
   for (let i = 0; i < lines.length; i++) {
     const line = stripComment(lines[i] ?? "").trim();
     if (line === "") continue;
+
+    // Section header like [severity_overrides]
+    if (line.startsWith("[") && line.endsWith("]")) {
+      const sectionName = line.slice(1, -1).trim();
+      currentSection = sectionName;
+      if (currentSection === "severity_overrides" && !result.severityOverrides) {
+        result.severityOverrides = {};
+      }
+      continue;
+    }
 
     const eq = line.indexOf("=");
     const key = eq <= 0 ? "" : line.slice(0, eq).trim();
@@ -88,6 +106,13 @@ export function parseConfig(text: string): Partial<AuditPulseConfig> {
       );
     }
     const rawValue = line.slice(eq + 1).trim();
+
+    if (currentSection === "severity_overrides") {
+      if (!result.severityOverrides) result.severityOverrides = {};
+      result.severityOverrides[key] = parseSeverity(rawValue, i + 1);
+      continue;
+    }
+
     switch (key) {
       case "disabled_rules":
         result.disabledRules = parseStringArray(rawValue, i + 1);
@@ -97,6 +122,9 @@ export function parseConfig(text: string): Partial<AuditPulseConfig> {
         break;
       case "min_severity":
         result.minSeverity = parseSeverity(rawValue, i + 1);
+        break;
+      case "severity_overrides":
+        result.severityOverrides = parseInlineSeverityOverrides(rawValue, i + 1);
         break;
       default:
         // Unknown keys are ignored so the file can carry project metadata.
@@ -130,6 +158,22 @@ export function resolveConfig(
 
   config.exclude.push(...(parsed.exclude ?? []));
 
+  if (parsed.severityOverrides) {
+    for (const [ruleId, severity] of Object.entries(parsed.severityOverrides)) {
+      if (!knownRuleIds.includes(ruleId)) {
+        throw new ConfigError(
+          `Unknown rule id in severity_overrides: ${ruleId}`,
+        );
+      }
+      if (!MIN_SEVERITIES.includes(severity)) {
+        throw new ConfigError(
+          `Invalid severity level for rule ${ruleId}: ${severity}`,
+        );
+      }
+      config.severityOverrides[ruleId] = severity;
+    }
+  }
+
   return config;
 }
 
@@ -159,11 +203,42 @@ function parseStringArray(raw: string, lineNo: number): string[] {
   return items;
 }
 
+function parseInlineSeverityOverrides(
+  raw: string,
+  lineNo: number,
+): Record<string, Severity> {
+  if (!raw.startsWith("{") || !raw.endsWith("}")) {
+    throw new ConfigError(
+      `auditpulse.toml line ${lineNo}: expected inline table like { "RULE" = "level" }, got: ${raw}`,
+    );
+  }
+
+  const inner = raw.slice(1, -1).trim();
+  if (inner === "") return {};
+
+  const overrides: Record<string, Severity> = {};
+  for (const part of inner.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed === "") continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) {
+      throw new ConfigError(
+        `auditpulse.toml line ${lineNo}: expected key = value in inline table, got: ${trimmed}`,
+      );
+    }
+    const key = stripQuotes(trimmed.slice(0, eq).trim());
+    const val = parseSeverity(trimmed.slice(eq + 1).trim(), lineNo);
+    overrides[key] = val;
+  }
+
+  return overrides;
+}
+
 function parseSeverity(raw: string, lineNo: number): Severity {
   const value = stripQuotes(raw);
   if (!MIN_SEVERITIES.includes(value as Severity)) {
     throw new ConfigError(
-      `auditpulse.toml line ${lineNo}: min_severity must be one of ${MIN_SEVERITIES.join(", ")}, got: ${raw}`,
+      `auditpulse.toml line ${lineNo}: severity must be one of ${MIN_SEVERITIES.join(", ")}, got: ${raw}`,
     );
   }
   return value as Severity;
