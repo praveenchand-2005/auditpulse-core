@@ -14,6 +14,7 @@ impl SafeBridge {
     /// Authenticated transfer: require_auth is the boundary.
     pub fn withdraw(env: Env, token: Address, to: Address, amount: i128) {
         env.require_auth(&to);
+        assert!(amount > 0);
         let client = token::Client::new(&env, &token);
         client.transfer(&env.current_contract_address(), &to, &amount);
     }
@@ -21,6 +22,7 @@ impl SafeBridge {
     /// Validated token id plus auth: both boundaries present.
     pub fn sweep(env: Env, token_id: Address, to: Address, amount: i128) {
         env.require_auth(&to);
+        assert!(amount > 0);
         let client = token::Client::new(&env, &token_id);
         client.transfer(&env.current_contract_address(), &to, &amount);
     }
