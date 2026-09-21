@@ -211,6 +211,7 @@ describe("existing contract fixtures through the CLI", () => {
       `
       fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         env.require_auth(&from);
+        assert!(amount > 0);
         let client = token::Client::new(&env, &token_id);
         client.transfer(&to, &amount);
         env.storage().persistent().extend_ttl(&from, 100, 200);
