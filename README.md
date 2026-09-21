@@ -11,6 +11,8 @@ Lightweight static analysis security scanner for Soroban (Stellar) smart contrac
 * **`unvalidatedExternalCall`** (`AP-CALL-001`): Flags cross-contract/token operations (transfers, burns, mints, admin changes) with no `require_auth` and no evidence-backed validation: an explicitly checked id (`assert!`/`require!`/comparison) before the call suppresses the finding, an unchecked user-supplied `*_id` argument is reported (medium confidence — naming alone is not a boundary), and a storage-resolved id target is reported at low confidence.
 * **`unprotectedUpgrade`** (`AP-UPG-001`): Flags upgrade/migration/admin-configuration functions (recognized by name) that contain no `require_auth` or admin check.
 * **`debugStatements`** (`AP-DEBUG-001`): Flags debug/development-only macros (`log!`, `dbg!`, `println!`, `print!`, `eprint(ln)!`) left in production contract code.
+* **`unsafeCasts`** (`AP-CAST-001`): Detects narrowing integer casts on amount-like values (`amount as u64`, `balance as i32`) that silently truncate i128 values.
+* **`unvalidatedAmountBounds`** (`AP-BOUND-001`): Flags entrypoints (`deposit`, `withdraw`, `mint`, `burn`, `transfer`) that move amounts without any bounds check (such as `assert!(amount > 0)`).
 
 ### Severity and confidence
 
@@ -26,6 +28,8 @@ detected pattern is actually problematic. The two are independent:
 | `AP-CALL-001` | high | low–medium (tiered by evidence) |
 | `AP-UPG-001` | critical | medium |
 | `AP-DEBUG-001` | low | high |
+| `AP-CAST-001` | medium | medium |
+| `AP-BOUND-001` | low | low |
 
 ### Fixtures
 
@@ -342,8 +346,6 @@ run; it skips titles that already exist, so it never creates duplicates).
 Built with TypeScript: Tree-sitter provides function structure, source-text pattern rules perform the checks, and Vitest tests it all.
 
 ```bash
-npm test
-
 # Run complete test suite
 npm test
 
