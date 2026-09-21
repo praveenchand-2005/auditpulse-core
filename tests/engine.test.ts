@@ -57,6 +57,8 @@ describe("RuleRegistry", () => {
       "AP-CALL-001",
       "AP-UPG-001",
       "AP-DEBUG-001",
+      "AP-CAST-001",
+      "AP-BOUND-001",
     ]);
     expect(registry.has("AP-AUTH-001")).toBe(true);
     expect(registry.has("AP-ERROR-001")).toBe(true);
