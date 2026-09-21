@@ -22,6 +22,7 @@ impl SafeVault {
     /// Gate every sensitive transfer with require_auth.
     pub fn withdraw(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         env.require_auth(&from);
+        assert!(amount > 0);
         let client = token::Client::new(&env, &Self::token_id(&env)?);
         client.transfer(&from, &to, &amount);
         Self::bump(&env);
@@ -31,6 +32,7 @@ impl SafeVault {
     /// Only accept a validated token id argument, and require auth for payouts.
     pub fn payout(env: Env, token_id: Address, to: Address, amount: i128) -> Result<(), Error> {
         env.require_auth(&to);
+        assert!(amount > 0);
         let client = token::Client::new(&env, &token_id);
         client.transfer(&env.current_contract_address(), &to, &amount);
         Self::bump(&env);
@@ -40,6 +42,7 @@ impl SafeVault {
     /// Checked arithmetic and a TTL bump on every storage touch.
     pub fn credit(env: Env, user: Address, amount: i128) -> Result<(), Error> {
         env.require_auth(&user);
+        assert!(amount > 0);
         let balance: i128 = env.storage().persistent().get(&user).unwrap_or(0);
         let updated = balance
             .checked_add(amount)
