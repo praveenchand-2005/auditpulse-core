@@ -125,7 +125,7 @@ describe("end-to-end CLI flow", () => {
 
     expect(result.status).toBe(1);
     const log = JSON.parse(result.stdout) as any;
-    expect(log.summary.filesScanned).toBe(6);
+    expect(log.summary.filesScanned).toBe(8);
 
     const files = new Set(log.findings.map((f: any) => f.location.file));
     for (const file of files) {
