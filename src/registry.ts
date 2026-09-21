@@ -6,6 +6,8 @@ import UncheckedArithmeticPlugin from "./plugins/uncheckedArithmetic.js";
 import UnvalidatedExternalCallPlugin from "./plugins/unvalidatedExternalCall.js";
 import UnprotectedUpgradePlugin from "./plugins/unprotectedUpgrade.js";
 import DebugStatementsPlugin from "./plugins/debugStatements.js";
+import UnsafeCastsPlugin from "./plugins/unsafeCasts.js";
+import UnvalidatedAmountBoundsPlugin from "./plugins/unvalidatedAmountBounds.js";
 
 /**
  * Holds the rules available to the engine, keyed by their stable id.
@@ -48,5 +50,7 @@ export function createDefaultRegistry(): RuleRegistry {
     .register(UncheckedArithmeticPlugin)
     .register(UnvalidatedExternalCallPlugin)
     .register(UnprotectedUpgradePlugin)
-    .register(DebugStatementsPlugin);
+    .register(DebugStatementsPlugin)
+    .register(UnsafeCastsPlugin)
+    .register(UnvalidatedAmountBoundsPlugin);
 }
