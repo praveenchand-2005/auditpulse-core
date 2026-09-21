@@ -79,6 +79,16 @@ describe("fixtures/vulnerable", () => {
     ]);
     expect(idsOf(findings)).toContain("AP-CALL-001");
   });
+
+  it("unsafe_casts.rs triggers AP-CAST-001", () => {
+    const findings = scanFixture("vulnerable/unsafe_casts.rs");
+    expect(idsOf(findings)).toContain("AP-CAST-001");
+  });
+
+  it("unbounded_entrypoint.rs triggers AP-BOUND-001", () => {
+    const findings = scanFixture("vulnerable/unbounded_entrypoint.rs");
+    expect(idsOf(findings)).toContain("AP-BOUND-001");
+  });
 });
 
 describe("fixtures/safe", () => {
@@ -100,6 +110,14 @@ describe("fixtures/safe", () => {
 
   it("auth_gated.rs produces no findings", () => {
     expect(idsOf(scanFixture("safe/auth_gated.rs"))).toEqual([]);
+  });
+
+  it("safe_casts.rs produces no findings", () => {
+    expect(idsOf(scanFixture("safe/safe_casts.rs"))).toEqual([]);
+  });
+
+  it("bounded_entrypoint.rs produces no findings", () => {
+    expect(idsOf(scanFixture("safe/bounded_entrypoint.rs"))).toEqual([]);
   });
 });
 
@@ -156,6 +174,7 @@ describe("fixtures/edge-cases", () => {
     expect(idsOf(findings)).toEqual([
       "AP-ARITH-001",
       "AP-AUTH-001",
+      "AP-BOUND-001",
       "AP-CALL-001",
       "AP-DEBUG-001",
       "AP-STORAGE-001",
@@ -240,11 +259,15 @@ describe("finding quality across all fixtures", () => {
     "vulnerable/unprotected_upgrade.rs",
     "vulnerable/debug_statements.rs",
     "vulnerable/auth_after_operation.rs",
+    "vulnerable/unsafe_casts.rs",
+    "vulnerable/unbounded_entrypoint.rs",
     "safe/checked_arithmetic.rs",
     "safe/validated_external_call.rs",
     "safe/protected_upgrade.rs",
     "safe/no_debug_statements.rs",
     "safe/auth_gated.rs",
+    "safe/safe_casts.rs",
+    "safe/bounded_entrypoint.rs",
     "edge-cases/comments_and_strings.rs",
     "edge-cases/auth_ordering.rs",
     "edge-cases/mixed_findings.rs",
